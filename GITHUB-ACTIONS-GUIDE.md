@@ -52,14 +52,18 @@ The output will look like this:
 }
 ```
 
-### Step 2: Add GitHub Repository Secret
+### Step 2: Add GitHub Repository Secrets
 
 1. Go to your GitHub repository
 2. Navigate to **Settings** → **Secrets and variables** → **Actions**
-3. Click **New repository secret**
-4. Name: `AZURE_CREDENTIALS`
-5. Value: Paste the entire JSON output from Step 1
-6. Click **Add secret**
+3. Create these 4 repository secrets (click **New repository secret** for each):
+
+| Secret Name | Value | Source |
+|-------------|-------|---------|
+| `AZURE_CLIENT_ID` | `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` | `clientId` from Step 1 JSON |
+| `AZURE_TENANT_ID` | `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` | `tenantId` from Step 1 JSON |
+| `AZURE_CLIENT_SECRET` | `xxxxxxxxxxxxxxxxxxxxxxxxxxxxx` | `clientSecret` from Step 1 JSON |
+| `AZURE_SUBSCRIPTION_ID` | `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` | `subscriptionId` from Step 1 JSON |
 
 ### Step 3: Update Workflow Variables (if needed)
 

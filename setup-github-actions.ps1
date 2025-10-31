@@ -56,22 +56,27 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host "⚠ Role assignment may have failed (might already exist)" -ForegroundColor Yellow
 }
 
-# Display the JSON for GitHub secret
+# Display the individual secrets for GitHub
 Write-Host "`n========================================" -ForegroundColor Cyan
-Write-Host "GitHub Repository Secret Configuration" -ForegroundColor Cyan
+Write-Host "GitHub Repository Secrets Configuration" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "1. Go to your GitHub repository" -ForegroundColor Yellow
-Write-Host "2. Navigate to Settings → Secrets and variables → Actions" -ForegroundColor Yellow
-Write-Host "3. Click 'New repository secret'" -ForegroundColor Yellow
-Write-Host "4. Name: AZURE_CREDENTIALS" -ForegroundColor Yellow
-Write-Host "5. Value: Copy the JSON below" -ForegroundColor Yellow
+Write-Host "Go to your GitHub repository: Settings → Secrets and variables → Actions" -ForegroundColor Yellow
+Write-Host "Create these 4 repository secrets:" -ForegroundColor Yellow
 Write-Host ""
-Write-Host "JSON for GitHub Secret (AZURE_CREDENTIALS):" -ForegroundColor Cyan
-Write-Host "============================================" -ForegroundColor Cyan
-Write-Host $spOutput -ForegroundColor White
+Write-Host "Secret Name: AZURE_CLIENT_ID" -ForegroundColor Cyan
+Write-Host "Value: $($spJson.clientId)" -ForegroundColor White
 Write-Host ""
-Write-Host "⚠️ IMPORTANT: Save this JSON securely - it contains sensitive credentials!" -ForegroundColor Red
+Write-Host "Secret Name: AZURE_TENANT_ID" -ForegroundColor Cyan  
+Write-Host "Value: $($spJson.tenantId)" -ForegroundColor White
+Write-Host ""
+Write-Host "Secret Name: AZURE_CLIENT_SECRET" -ForegroundColor Cyan
+Write-Host "Value: $($spJson.clientSecret)" -ForegroundColor White
+Write-Host ""
+Write-Host "Secret Name: AZURE_SUBSCRIPTION_ID" -ForegroundColor Cyan
+Write-Host "Value: $($spJson.subscriptionId)" -ForegroundColor White
+Write-Host ""
+Write-Host "⚠️ IMPORTANT: Save these values securely - they contain sensitive credentials!" -ForegroundColor Red
 Write-Host ""
 
 # Test the service principal

@@ -6,14 +6,16 @@ If you see linting errors in VS Code for the GitHub Actions workflows like:
 
 ```
 Unable to resolve action `Azure/login@v1`, repository or version not found
+Context access might be invalid: AZURE_CLIENT_ID
 ```
 
-**This is a VS Code extension issue, not a runtime problem.**
+**These are VS Code extension issues, not runtime problems.**
 
 ### Why This Happens
 - The GitHub Actions VS Code extension cache may be outdated
 - Network connectivity issues to GitHub's action registry
 - Extension version compatibility issues
+- VS Code doesn't know about your repository secrets (AZURE_CLIENT_ID, etc.)
 
 ### Solutions
 1. **Ignore the lint errors** - The workflows will run correctly in GitHub Actions
