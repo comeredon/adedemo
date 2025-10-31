@@ -1,0 +1,6 @@
+name: container-app-demo
+version: 1.0.0
+summary: Azure Container App Deployment
+description: Deploys an Azure Container App with managed environment
+runner: ARM
+templatePath: azuredeploy.json
