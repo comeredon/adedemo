@@ -10,7 +10,22 @@ This repository contains Azure Deployment Environment templates that allow you t
 
 ## 🛠️ How to Create Your Own Environment
 
-### Method 1: Using the PowerShell Script (Recommended)
+### Method 1: Using GitHub Actions (Recommended for CI/CD)
+
+**Automatic Deployment (on code push):**
+1. Push your code to the `main` branch
+2. GitHub Actions automatically creates an environment
+3. Check the Actions tab for progress and the app URL
+
+**Manual Deployment:**
+1. Go to **Actions** tab in GitHub
+2. Select **"Deploy to Azure Deployment Environment"**
+3. Click **"Run workflow"** and fill parameters
+4. Monitor progress and get the app URL
+
+📚 **See [GitHub Actions Guide](GITHUB-ACTIONS-GUIDE.md) for complete setup instructions**
+
+### Method 2: Using the PowerShell Script
 
 ```powershell
 # Basic deployment with default settings
@@ -24,7 +39,7 @@ This repository contains Azure Deployment Environment templates that allow you t
     -MaxReplicas 10
 ```
 
-### Method 2: Using Azure CLI Directly
+### Method 3: Using Azure CLI Directly
 
 ```powershell
 az devcenter dev environment create `
@@ -38,7 +53,7 @@ az devcenter dev environment create `
     --user-id "me"
 ```
 
-### Method 3: Using Azure Portal
+### Method 4: Using Azure Portal
 
 1. Go to [Azure Developer Portal](https://devportal.microsoft.com/)
 2. Select the **ade-sandbox-project** project
@@ -168,6 +183,7 @@ az devcenter admin catalog show --name "container-app-templates" --dev-center-na
 
 ## 🔗 Useful Links
 
+- **[GitHub Actions Guide](GITHUB-ACTIONS-GUIDE.md)** - Complete CI/CD setup instructions
 - [Azure Developer Portal](https://devportal.microsoft.com/)
 - [Azure Container Apps Documentation](https://learn.microsoft.com/azure/container-apps/)
 - [Azure Deployment Environments Documentation](https://learn.microsoft.com/azure/deployment-environments/)

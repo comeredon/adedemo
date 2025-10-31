@@ -1,0 +1,264 @@
+name: Deploy to Azure Deployment Environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment_name:
+        description: 'Name for your deployment environment'
+        required: true
+        type: string
+      container_image:
+        description: 'Container image to deploy (optional)'
+        required: false
+        default: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+        type: string
+      min_replicas:
+        description: 'Minimum number of replicas'
+        required: false
+        default: '1'
+        type: string
+      max_replicas:
+        description: 'Maximum number of replicas'
+        required: false
+        default: '3'
+        type: string
+      environment_type:
+        description: 'Environment type'
+        required: false
+        default: 'Sandbox'
+        type: choice
+        options:
+          - Sandbox
+          - adedemo
+  
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'Dockerfile'
+      - '.github/workflows/deploy-to-ade.yml'
+
+env:
+  DEV_CENTER_NAME: 'ade-sandbox-dc'
+  PROJECT_NAME: 'ade-sandbox-project'
+  CATALOG_NAME: 'container-app-templates'
+  TEMPLATE_NAME: 'container-app-demo'
+  RESOURCE_GROUP: 'ade-cre-demo'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set environment variables
+      run: |
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+          echo "ENVIRONMENT_NAME=${{ github.event.inputs.environment_name }}" >> $GITHUB_ENV
+          echo "CONTAINER_IMAGE=${{ github.event.inputs.container_image }}" >> $GITHUB_ENV
+          echo "MIN_REPLICAS=${{ github.event.inputs.min_replicas }}" >> $GITHUB_ENV
+          echo "MAX_REPLICAS=${{ github.event.inputs.max_replicas }}" >> $GITHUB_ENV
+          echo "ENVIRONMENT_TYPE=${{ github.event.inputs.environment_type }}" >> $GITHUB_ENV
+        else
+          echo "ENVIRONMENT_NAME=${GITHUB_REF_NAME}-${GITHUB_SHA::8}" >> $GITHUB_ENV
+          echo "CONTAINER_IMAGE=mcr.microsoft.com/azuredocs/containerapps-helloworld:latest" >> $GITHUB_ENV
+          echo "MIN_REPLICAS=1" >> $GITHUB_ENV
+          echo "MAX_REPLICAS=3" >> $GITHUB_ENV
+          echo "ENVIRONMENT_TYPE=Sandbox" >> $GITHUB_ENV
+        fi
+    
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+    
+    - name: Install Azure CLI DevCenter Extension
+      run: |
+        az extension add --name devcenter --upgrade
+    
+    - name: Check if environment exists
+      id: check-env
+      run: |
+        if az devcenter dev environment show \
+          --dev-center "${{ env.DEV_CENTER_NAME }}" \
+          --project-name "${{ env.PROJECT_NAME }}" \
+          --name "${{ env.ENVIRONMENT_NAME }}" \
+          --user-id "me" >/dev/null 2>&1; then
+          echo "exists=true" >> $GITHUB_OUTPUT
+          echo "Environment '${{ env.ENVIRONMENT_NAME }}' already exists"
+        else
+          echo "exists=false" >> $GITHUB_OUTPUT
+          echo "Environment '${{ env.ENVIRONMENT_NAME }}' does not exist"
+        fi
+    
+    - name: Create or Update Environment
+      run: |
+        PARAMETERS=$(cat <<EOF
+        {
+          "environmentName": "${{ env.ENVIRONMENT_NAME }}",
+          "containerImage": "${{ env.CONTAINER_IMAGE }}",
+          "minReplicas": ${{ env.MIN_REPLICAS }},
+          "maxReplicas": ${{ env.MAX_REPLICAS }}
+        }
+        EOF
+        )
+        
+        if [ "${{ steps.check-env.outputs.exists }}" == "true" ]; then
+          echo "Updating existing environment..."
+          # For updates, we would typically need to redeploy or update the ARM template
+          # This is a limitation of current ADE - environments are immutable
+          echo "⚠️ Environment already exists. Consider deleting and recreating for updates."
+          echo "Current environment status:"
+          az devcenter dev environment show \
+            --dev-center "${{ env.DEV_CENTER_NAME }}" \
+            --project-name "${{ env.PROJECT_NAME }}" \
+            --name "${{ env.ENVIRONMENT_NAME }}" \
+            --user-id "me" \
+            --query "{name:name, state:provisioningState, resourceGroup:resourceGroupId}"
+        else
+          echo "Creating new environment..."
+          echo "Parameters: $PARAMETERS"
+          
+          az devcenter dev environment create \
+            --dev-center "${{ env.DEV_CENTER_NAME }}" \
+            --project-name "${{ env.PROJECT_NAME }}" \
+            --environment-name "${{ env.ENVIRONMENT_NAME }}" \
+            --environment-type "${{ env.ENVIRONMENT_TYPE }}" \
+            --catalog-name "${{ env.CATALOG_NAME }}" \
+            --environment-definition-name "${{ env.TEMPLATE_NAME }}" \
+            --parameters "$PARAMETERS" \
+            --user-id "me"
+        fi
+    
+    - name: Wait for deployment completion
+      run: |
+        echo "Waiting for environment deployment to complete..."
+        timeout=1800  # 30 minutes
+        interval=30   # Check every 30 seconds
+        elapsed=0
+        
+        while [ $elapsed -lt $timeout ]; do
+          status=$(az devcenter dev environment show \
+            --dev-center "${{ env.DEV_CENTER_NAME }}" \
+            --project-name "${{ env.PROJECT_NAME }}" \
+            --name "${{ env.ENVIRONMENT_NAME }}" \
+            --user-id "me" \
+            --query "provisioningState" -o tsv 2>/dev/null || echo "Unknown")
+          
+          echo "Current status: $status (${elapsed}s elapsed)"
+          
+          case $status in
+            "Succeeded")
+              echo "✅ Environment deployment completed successfully!"
+              break
+              ;;
+            "Failed")
+              echo "❌ Environment deployment failed!"
+              az devcenter dev environment show \
+                --dev-center "${{ env.DEV_CENTER_NAME }}" \
+                --project-name "${{ env.PROJECT_NAME }}" \
+                --name "${{ env.ENVIRONMENT_NAME }}" \
+                --user-id "me"
+              exit 1
+              ;;
+            "Creating"|"Accepted"|"Running")
+              echo "🔄 Deployment in progress..."
+              ;;
+            *)
+              echo "⚠️ Unknown status: $status"
+              ;;
+          esac
+          
+          sleep $interval
+          elapsed=$((elapsed + interval))
+        done
+        
+        if [ $elapsed -ge $timeout ]; then
+          echo "❌ Deployment timed out after $timeout seconds"
+          exit 1
+        fi
+    
+    - name: Get deployment information
+      id: get-info
+      run: |
+        # Get environment details
+        ENV_INFO=$(az devcenter dev environment show \
+          --dev-center "${{ env.DEV_CENTER_NAME }}" \
+          --project-name "${{ env.PROJECT_NAME }}" \
+          --name "${{ env.ENVIRONMENT_NAME }}" \
+          --user-id "me")
+        
+        RESOURCE_GROUP_ID=$(echo "$ENV_INFO" | jq -r '.resourceGroupId')
+        RESOURCE_GROUP_NAME=$(basename "$RESOURCE_GROUP_ID")
+        
+        echo "resource_group=$RESOURCE_GROUP_NAME" >> $GITHUB_OUTPUT
+        echo "Resource Group: $RESOURCE_GROUP_NAME"
+        
+        # Get container app details
+        CONTAINER_APPS=$(az containerapp list --resource-group "$RESOURCE_GROUP_NAME" --query "[0]" 2>/dev/null || echo "{}")
+        
+        if [ "$CONTAINER_APPS" != "{}" ] && [ "$CONTAINER_APPS" != "null" ]; then
+          FQDN=$(echo "$CONTAINER_APPS" | jq -r '.properties.configuration.ingress.fqdn // empty')
+          if [ -n "$FQDN" ] && [ "$FQDN" != "null" ]; then
+            APP_URL="https://$FQDN"
+            echo "app_url=$APP_URL" >> $GITHUB_OUTPUT
+            echo "Application URL: $APP_URL"
+          fi
+        fi
+    
+    - name: Display deployment summary
+      run: |
+        echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+        echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+        echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Environment Name | ${{ env.ENVIRONMENT_NAME }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Environment Type | ${{ env.ENVIRONMENT_TYPE }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Container Image | ${{ env.CONTAINER_IMAGE }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Resource Group | ${{ steps.get-info.outputs.resource_group }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Replicas | ${{ env.MIN_REPLICAS }} - ${{ env.MAX_REPLICAS }} |" >> $GITHUB_STEP_SUMMARY
+        
+        if [ -n "${{ steps.get-info.outputs.app_url }}" ]; then
+          echo "| Application URL | [${{ steps.get-info.outputs.app_url }}](${{ steps.get-info.outputs.app_url }}) |" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🎯 Next Steps" >> $GITHUB_STEP_SUMMARY
+        echo "- Visit your application at the URL above" >> $GITHUB_STEP_SUMMARY
+        echo "- Monitor your app in the [Azure Portal](https://portal.azure.com)" >> $GITHUB_STEP_SUMMARY
+        echo "- Use Azure CLI to manage your environment: \`az devcenter dev environment list\`" >> $GITHUB_STEP_SUMMARY
+        
+        # Also output to console
+        echo "🎉 Deployment completed successfully!"
+        echo "📋 Environment: ${{ env.ENVIRONMENT_NAME }}"
+        echo "🏗️ Resource Group: ${{ steps.get-info.outputs.resource_group }}"
+        if [ -n "${{ steps.get-info.outputs.app_url }}" ]; then
+          echo "🌐 Application URL: ${{ steps.get-info.outputs.app_url }}"
+        fi
+
+  cleanup:
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.cleanup == 'true'
+    
+    steps:
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+    
+    - name: Install Azure CLI DevCenter Extension
+      run: |
+        az extension add --name devcenter --upgrade
+    
+    - name: Delete Environment
+      run: |
+        echo "Deleting environment: ${{ github.event.inputs.environment_name }}"
+        az devcenter dev environment delete \
+          --dev-center "${{ env.DEV_CENTER_NAME }}" \
+          --project-name "${{ env.PROJECT_NAME }}" \
+          --name "${{ github.event.inputs.environment_name }}" \
+          --user-id "me" \
+          --yes
+        echo "Environment deleted successfully!"

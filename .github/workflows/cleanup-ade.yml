@@ -1,0 +1,129 @@
+name: Cleanup Azure Deployment Environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment_name:
+        description: 'Name of the environment to delete'
+        required: true
+        type: string
+      confirm_deletion:
+        description: 'Type "DELETE" to confirm deletion'
+        required: true
+        type: string
+
+env:
+  DEV_CENTER_NAME: 'ade-sandbox-dc'
+  PROJECT_NAME: 'ade-sandbox-project'
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Validate deletion confirmation
+      run: |
+        if [ "${{ github.event.inputs.confirm_deletion }}" != "DELETE" ]; then
+          echo "❌ Deletion not confirmed. You must type 'DELETE' to confirm."
+          exit 1
+        fi
+        echo "✅ Deletion confirmed"
+    
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+    
+    - name: Install Azure CLI DevCenter Extension
+      run: |
+        az extension add --name devcenter --upgrade
+    
+    - name: Check if environment exists
+      id: check-env
+      run: |
+        if az devcenter dev environment show \
+          --dev-center "${{ env.DEV_CENTER_NAME }}" \
+          --project-name "${{ env.PROJECT_NAME }}" \
+          --name "${{ github.event.inputs.environment_name }}" \
+          --user-id "me" >/dev/null 2>&1; then
+          echo "exists=true" >> $GITHUB_OUTPUT
+          echo "Environment '${{ github.event.inputs.environment_name }}' found"
+        else
+          echo "exists=false" >> $GITHUB_OUTPUT
+          echo "Environment '${{ github.event.inputs.environment_name }}' does not exist"
+        fi
+    
+    - name: Get environment info before deletion
+      if: steps.check-env.outputs.exists == 'true'
+      run: |
+        echo "Getting environment information before deletion..."
+        az devcenter dev environment show \
+          --dev-center "${{ env.DEV_CENTER_NAME }}" \
+          --project-name "${{ env.PROJECT_NAME }}" \
+          --name "${{ github.event.inputs.environment_name }}" \
+          --user-id "me" \
+          --query "{name:name, state:provisioningState, resourceGroup:resourceGroupId, created:systemData.createdAt}"
+    
+    - name: Delete environment
+      if: steps.check-env.outputs.exists == 'true'
+      run: |
+        echo "🗑️ Deleting environment: ${{ github.event.inputs.environment_name }}"
+        az devcenter dev environment delete \
+          --dev-center "${{ env.DEV_CENTER_NAME }}" \
+          --project-name "${{ env.PROJECT_NAME }}" \
+          --name "${{ github.event.inputs.environment_name }}" \
+          --user-id "me" \
+          --yes
+    
+    - name: Wait for deletion completion
+      if: steps.check-env.outputs.exists == 'true'
+      run: |
+        echo "Waiting for environment deletion to complete..."
+        timeout=600  # 10 minutes
+        interval=15  # Check every 15 seconds
+        elapsed=0
+        
+        while [ $elapsed -lt $timeout ]; do
+          if ! az devcenter dev environment show \
+            --dev-center "${{ env.DEV_CENTER_NAME }}" \
+            --project-name "${{ env.PROJECT_NAME }}" \
+            --name "${{ github.event.inputs.environment_name }}" \
+            --user-id "me" >/dev/null 2>&1; then
+            echo "✅ Environment successfully deleted!"
+            break
+          fi
+          
+          echo "🔄 Deletion in progress... (${elapsed}s elapsed)"
+          sleep $interval
+          elapsed=$((elapsed + interval))
+        done
+        
+        if [ $elapsed -ge $timeout ]; then
+          echo "⚠️ Deletion check timed out after $timeout seconds"
+          echo "The environment may still be deleting. Check the Azure Portal for status."
+        fi
+    
+    - name: Environment not found
+      if: steps.check-env.outputs.exists == 'false'
+      run: |
+        echo "ℹ️ Environment '${{ github.event.inputs.environment_name }}' was not found."
+        echo "It may have already been deleted or never existed."
+    
+    - name: Display cleanup summary
+      run: |
+        echo "## 🗑️ Cleanup Summary" >> $GITHUB_STEP_SUMMARY
+        echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+        echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Environment Name | ${{ github.event.inputs.environment_name }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Action | Delete |" >> $GITHUB_STEP_SUMMARY
+        if [ "${{ steps.check-env.outputs.exists }}" == "true" ]; then
+          echo "| Status | ✅ Deleted |" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "| Status | ℹ️ Not Found |" >> $GITHUB_STEP_SUMMARY
+        fi
+        echo "| Timestamp | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |" >> $GITHUB_STEP_SUMMARY
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🎯 Next Steps" >> $GITHUB_STEP_SUMMARY
+        echo "- Verify cleanup in the [Azure Portal](https://portal.azure.com)" >> $GITHUB_STEP_SUMMARY
+        echo "- Check remaining environments: \`az devcenter dev environment list\`" >> $GITHUB_STEP_SUMMARY
