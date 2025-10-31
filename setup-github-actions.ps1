@@ -56,7 +56,7 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host "⚠ Role assignment may have failed (might already exist)" -ForegroundColor Yellow
 }
 
-# Display the individual secrets for GitHub
+# Display both options for GitHub secrets
 Write-Host "`n========================================" -ForegroundColor Cyan
 Write-Host "GitHub Repository Secrets Configuration" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
